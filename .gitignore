@@ -1,0 +1,8 @@
+/.vscode
+/.vscodeignore
+/dist
+*.vsix
+/node_modules
+.openspec
+.apixs
+__pycache__

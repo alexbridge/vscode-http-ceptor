@@ -1,0 +1,113 @@
+{
+  "name": "http-ceptor",
+  "displayName": "HTTPceptor",
+  "description": "Embedded mitmproxy network inspector for VS Code",
+  "version": "1.0.0",
+  "publisher": "abridge",
+  "author": "abridge",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alexbridge/vscode-http-ceptor.git"
+  },
+  "icon": "media/logo.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Testing",
+    "Other"
+  ],
+  "keywords": [
+    "mitmproxy",
+    "http-inspector",
+    "http",
+    "vscode-extension",
+    "extension development",
+    "api debugger",
+    "developer tools",
+    "devtools"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "scripts": {
+    "build": "node esbuild.js",
+    "build:webview": "node esbuild-webview.js",
+    "build:css": "npx @tailwindcss/cli -i webview/styles.css -o dist/tailwind.css --minify",
+    "build:all": "npm run build && npm run build:webview && npm run build:css",
+    "build:production": "node esbuild.js --production && node esbuild-webview.js --production && npm run build:css",
+    "package": "npm run build:production && yes | npx @vscode/vsce package --no-dependencies",
+    "watch": "node esbuild.js --watch",
+    "lint": "npm run format:check && tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\" \"webview/**/*.{ts,tsx}\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"webview/**/*.{ts,tsx}\""
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "httpceptor.start",
+        "title": "Start Proxy",
+        "category": "HTTPceptor",
+        "icon": "$(play)"
+      },
+      {
+        "command": "httpceptor.stop",
+        "title": "Stop Proxy",
+        "category": "HTTPceptor",
+        "icon": "$(stop)"
+      },
+      {
+        "command": "httpceptor.openPanel",
+        "title": "Open Inspector",
+        "category": "HTTPceptor",
+        "icon": "$(layout-panel)"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "httpceptor.openPanel",
+        "key": "ctrl+alt+i",
+        "mac": "cmd+alt+i",
+        "when": "httpceptor.proxyRunning"
+      }
+    ],
+    "configuration": {
+      "title": "HTTPceptor",
+      "properties": {
+        "httpceptor.mitmBinary": {
+          "type": "string",
+          "default": "mitmdump",
+          "description": "Custom path or name for the mitmdump binary."
+        },
+        "httpceptor.mitmproxyPort": {
+          "type": "number",
+          "default": 8080,
+          "description": "Port for the HTTP interception proxy."
+        },
+        "httpceptor.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start the proxy when the extension activates (window load)."
+        }
+      }
+    }
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.2.1",
+    "@types/http-proxy": "^1.17.17",
+    "@types/node": "^20.11.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.27.4",
+    "prettier": "^3.8.1",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "http-proxy": "^1.18.1",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  }
+}

@@ -1,0 +1,14 @@
+<svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Outer arc -->
+  <path d="M12 4 A8 8 0 1 0 12 20" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+  <path d="M12 20 A8 8 0 0 0 16 18" stroke="#00d4ff" stroke-width="2" stroke-linecap="round"/>
+  <!-- Inner arc -->
+  <path d="M12 8 A4 4 0 1 1 12 16" stroke="#00d4ff" stroke-width="1.5" stroke-opacity="0.7" stroke-linecap="round"/>
+  <!-- Nodes -->
+  <circle cx="12" cy="4" r="1.5" fill="#f5a623"/>
+  <circle cx="16" cy="18" r="1.5" fill="#f5a623"/>
+  <!-- Core -->
+  <circle cx="12" cy="12" r="4" fill="#1a0800" stroke="#f5a623" stroke-width="1"/>
+  <circle cx="12" cy="12" r="2.5" fill="#ff4d00"/>
+  <circle cx="12" cy="12" r="1" fill="#ffffff" fill-opacity="0.9"/>
+</svg>

@@ -1,0 +1,693 @@
+@import "tailwindcss";
+
+/* ======================================================
+   mitmproxy-web faithful replica — adapted to VS Code
+   ====================================================== */
+
+:root {
+  /* mitmproxy color tokens (light-theme defaults) */
+  --mitm-bg: #ffffff;
+  --mitm-bg-alt: #f5f5f5;
+  --mitm-bg-header: #f2f2f2;
+  --mitm-border: #bebebe;
+  --mitm-border-light: #e5e5e5;
+  --mitm-text: #333333;
+  --mitm-text-muted: #777777;
+  --mitm-selected: hsl(209, 51%, 92%);
+  --mitm-selected-even: hsl(209, 51%, 86%);
+  --mitm-highlighted: hsl(48, 100%, 80%);
+  --mitm-highlighted-even: hsl(48, 100%, 75%);
+  --mitm-tab-active-bg: #ffffff;
+  --mitm-tab-active-border: #a8a8a8;
+  --mitm-intercept-orange: hsl(30, 100%, 50%);
+  --mitm-tls-green: rgba(0, 185, 0, 0.5);
+  --mitm-link: #428bca;
+  --mitm-header-key: #333;
+  --mitm-mono: 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', monospace;
+  --mitm-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+/* VS Code dark theme override detection */
+.vscode-dark {
+  --mitm-bg: #1e1e1e;
+  --mitm-bg-alt: #252526;
+  --mitm-bg-header: #2d2d2d;
+  --mitm-border: #3e3e3e;
+  --mitm-border-light: #333;
+  --mitm-text: #cccccc;
+  --mitm-text-muted: #888888;
+  --mitm-selected: hsl(209, 40%, 22%);
+  --mitm-selected-even: hsl(209, 40%, 18%);
+  --mitm-highlighted: hsl(48, 50%, 25%);
+  --mitm-highlighted-even: hsl(48, 50%, 20%);
+  --mitm-tab-active-bg: #1e1e1e;
+  --mitm-tab-active-border: #555;
+  --mitm-tls-green: rgba(0, 185, 0, 0.4);
+  --mitm-link: #569cd6;
+  --mitm-header-key: #cccccc;
+}
+
+html {
+  box-sizing: border-box;
+}
+
+*,
+*:before,
+*:after {
+  box-sizing: inherit;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--mitm-sans);
+  font-size: 13px;
+  line-height: 1.42857143;
+  color: var(--mitm-text);
+  background: var(--mitm-bg);
+}
+
+/* ================================
+   MAIN LAYOUT — mitmproxy-style
+   ================================ */
+.mitm-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Header / Toolbar */
+.mitm-header {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  background-color: var(--mitm-bg-header);
+  border-bottom: solid var(--mitm-border) 1px;
+  padding: 4px 8px;
+  gap: 8px;
+  height: 36px;
+}
+
+.mitm-header .brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--mitm-text);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.mitm-header .brand svg {
+  flex-shrink: 0;
+}
+
+.mitm-header .brand .status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.mitm-header .brand .status-dot.running {
+  background: #4caf50;
+  box-shadow: 0 0 4px rgba(76, 175, 80, 0.6);
+}
+
+.mitm-header .brand .status-dot.idle {
+  background: #999;
+}
+
+.mitm-header .separator {
+  width: 1px;
+  height: 20px;
+  background: var(--mitm-border);
+}
+
+.mitm-header .toolbar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  color: var(--mitm-text-muted);
+  border-radius: 3px;
+  font-size: 14px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.mitm-header .toolbar-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--mitm-text);
+}
+
+.vscode-dark .mitm-header .toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mitm-header .filter-input {
+  flex: 1;
+  max-width: 500px;
+  height: 26px;
+  border: 1px solid var(--mitm-border);
+  border-radius: 3px;
+  padding: 0 8px 0 28px;
+  font-size: 12px;
+  font-family: var(--mitm-sans);
+  color: var(--mitm-text);
+  background: var(--mitm-bg);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.mitm-header .filter-input:focus {
+  border-color: var(--mitm-link);
+}
+
+.mitm-header .filter-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 500px;
+}
+
+.mitm-header .filter-wrap .search-icon {
+  position: absolute;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--mitm-text-muted);
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.mitm-header .flow-count {
+  font-size: 11px;
+  color: var(--mitm-text-muted);
+  white-space: nowrap;
+  user-select: none;
+}
+
+/* Main View — split horizontal */
+.mitm-main-view {
+  flex: 1 1 auto;
+  height: 0;
+  display: flex;
+  flex-direction: row;
+}
+
+/* ================================
+   FLOW TABLE — exact mitmproxy CSS
+   ================================ */
+.flow-table {
+  flex: 1 1 auto;
+  width: 100%;
+  overflow-y: scroll;
+  overflow-x: hidden;
+}
+
+.flow-table table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+}
+
+.flow-table thead tr {
+  background-color: var(--mitm-bg-header);
+  border-bottom: solid var(--mitm-border) 1px;
+  line-height: 23px;
+}
+
+.flow-table th {
+  font-weight: normal;
+  font-size: 12px;
+  color: var(--mitm-text-muted);
+  padding: 0 1px;
+  text-align: left;
+  user-select: none;
+  position: relative;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.flow-table th:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+}
+
+.vscode-dark .flow-table th:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.flow-table th.sort-asc::after,
+.flow-table th.sort-desc::after {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  font-size: 10px;
+}
+
+.flow-table th.sort-asc::after {
+  content: "▲";
+}
+
+.flow-table th.sort-desc::after {
+  content: "▼";
+}
+
+.flow-table tr {
+  cursor: pointer;
+  background-color: var(--mitm-bg);
+  line-height: 24px;
+}
+
+.flow-table tbody tr:nth-child(even) {
+  background-color: var(--mitm-bg-alt);
+}
+
+.flow-table tbody tr:hover {
+  background-color: hsl(209, 52%, 96%);
+}
+
+.vscode-dark .flow-table tbody tr:hover {
+  background-color: hsl(209, 30%, 20%);
+}
+
+.flow-table tbody tr.selected {
+  background-color: var(--mitm-selected) !important;
+}
+
+.flow-table tbody tr.selected:nth-child(even) {
+  background-color: var(--mitm-selected-even) !important;
+}
+
+.flow-table tbody tr.highlighted {
+  background-color: var(--mitm-highlighted);
+}
+
+.flow-table tbody tr.highlighted:nth-child(even) {
+  background-color: var(--mitm-highlighted-even);
+}
+
+.flow-table td {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  padding: 0 4px;
+}
+
+/* Column widths — mitmproxy-exact */
+.col-tls {
+  width: 36px;
+  text-align: center;
+  padding: 0 !important;
+}
+
+.col-tls .tls-indicator {
+  display: inline-block;
+  font-size: 1rem;
+  letter-spacing: -0.5px;
+  font-weight: 700;
+}
+
+.col-tls .tls-https {
+  background-color: var(--mitm-tls-green);
+  color: #a8aaa8;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-size: 9px;
+}
+
+.vscode-dark .col-tls .tls-https {
+  color: #c6e2c7;
+}
+
+.col-tls .tls-http {
+  color: var(--mitm-text-muted);
+  font-size: 9px;
+  opacity: 0.5;
+}
+
+.col-icon {
+  width: 22px;
+  text-align: center;
+  padding: 0 !important;
+  vertical-align: middle;
+}
+
+.col-icon svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.col-path {
+  /* takes remaining space */
+  min-width: 0;
+}
+
+.col-method {
+  width: 60px;
+  font-weight: 600;
+}
+
+.col-status {
+  width: 50px;
+  text-align: left;
+}
+
+.col-initiator {
+  width: 120px;
+  color: var(--mitm-text-muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.col-size {
+  width: 70px;
+  text-align: right;
+}
+
+.col-time {
+  width: 55px;
+  text-align: right;
+  padding-right: 8px !important;
+}
+
+/* Status color coding */
+.status-2xx {
+  color: #4caf50;
+}
+
+.status-3xx {
+  color: #ff9800;
+}
+
+.status-4xx {
+  color: #f44336;
+}
+
+.status-5xx {
+  color: #e91e63;
+}
+
+.status-1xx {
+  color: #2196f3;
+}
+
+.status-pending {
+  color: var(--mitm-text-muted);
+}
+
+/* Empty state */
+.flow-table-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--mitm-text-muted);
+  font-size: 13px;
+  user-select: none;
+}
+
+.flow-table-empty .empty-icon {
+  font-size: 32px;
+  margin-bottom: 12px;
+  opacity: 0.3;
+}
+
+/* ================================
+   SPLITTER
+   ================================ */
+.mitm-splitter {
+  flex: 0 0 1px;
+  background-color: var(--mitm-border);
+  cursor: col-resize;
+  position: relative;
+}
+
+.mitm-splitter::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -2px;
+  right: -2px;
+  bottom: 0;
+}
+
+/* ================================
+   FLOW DETAIL — right panel
+   ================================ */
+.flow-detail {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 70vw;
+}
+
+/* Nav Tabs — mitmproxy Bootstrap-style */
+.flow-detail .nav-tabs {
+  display: flex;
+  align-items: flex-end;
+  background-color: var(--mitm-bg-header);
+  border-bottom: solid var(--mitm-tab-active-border) 1px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.flow-detail .nav-tabs .tab-item {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  margin: 0 2px -1px;
+  font-size: 12px;
+  color: var(--mitm-link);
+  text-decoration: none;
+  border: 1px solid transparent;
+  cursor: pointer;
+  background: none;
+  user-select: none;
+  white-space: nowrap;
+  transition: background-color 0.1s;
+}
+
+.flow-detail .nav-tabs .tab-item:hover {
+  background-color: rgba(0, 0, 0, 0.04);
+  border-color: transparent;
+}
+
+.vscode-dark .flow-detail .nav-tabs .tab-item:hover {
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.flow-detail .nav-tabs .tab-item.active {
+  background-color: var(--mitm-tab-active-bg);
+  border-color: var(--mitm-tab-active-border);
+  border-bottom-color: var(--mitm-tab-active-bg);
+  color: var(--mitm-text);
+  font-weight: 500;
+}
+
+.flow-detail .nav-tabs .tab-spacer {
+  flex: 1;
+}
+
+.flow-detail .nav-tabs .close-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 100%;
+  background: none;
+  border: none;
+  color: var(--mitm-text-muted);
+  cursor: pointer;
+  font-size: 15px;
+  padding: 0;
+  margin-right: 4px;
+  transition: color 0.15s;
+}
+
+.flow-detail .nav-tabs .close-button:hover {
+  color: var(--mitm-text);
+}
+
+/* Detail Section Content */
+.flow-detail section {
+  overflow-y: auto;
+  flex: 1;
+  padding: 8px 12px 16px;
+}
+
+/* First line header (request line) — mitmproxy-style */
+.first-line {
+  font-family: var(--mitm-mono);
+  background-color: #428bca;
+  color: white;
+  margin: 0 -12px 8px;
+  padding: 6px 12px;
+  word-break: break-all;
+  max-height: 80px;
+  overflow-y: auto;
+  font-size: 12px;
+  border-radius: 0;
+}
+
+.vscode-dark .first-line {
+  background-color: #2b5f8e;
+}
+
+/* Headers / KV display */
+.kv-section {
+  margin-bottom: 12px;
+}
+
+.kv-section h5 {
+  font-size: 12px;
+  font-weight: bold;
+  margin: 10px 0 4px;
+  color: var(--mitm-text);
+}
+
+.kv-row {
+  display: flex;
+  margin-bottom: 2px;
+  line-height: 1.5;
+  max-height: 12.4ex;
+  overflow-y: auto;
+  word-break: break-all;
+}
+
+.kv-key {
+  font-weight: bold;
+  font-size: 12px;
+  color: var(--mitm-header-key);
+  min-width: 0;
+  flex-shrink: 0;
+  padding-right: 8px;
+}
+
+.kv-key::after {
+  content: ':';
+}
+
+.kv-value {
+  font-family: var(--mitm-mono);
+  font-size: 12px;
+  color: var(--mitm-text);
+  word-break: break-all;
+  min-width: 0;
+}
+
+/* Connection / Timing tables */
+.detail-table {
+  width: 70vw;
+  table-layout: fixed;
+  word-break: break-all;
+  border-collapse: collapse;
+  margin-bottom: 12px;
+}
+
+.detail-table td {
+  vertical-align: top;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.detail-table td:first-child {
+  font-weight: normal;
+  color: var(--mitm-text-muted);
+  width: 30%;
+  padding-right: 12px;
+}
+
+.detail-table td:nth-child(2) {
+  font-family: var(--mitm-mono);
+  width: 70%;
+}
+
+.detail-table tr:not(:first-child) {
+  border-top: 1px solid var(--mitm-border-light);
+}
+
+/* Content view — code / body */
+.contentview {
+  margin: 0 -12px;
+  padding: 0 12px;
+}
+
+.contentview .controls {
+  display: flex;
+  align-items: center;
+}
+
+.contentview .controls h5 {
+  flex: 1;
+  font-size: 12px;
+  font-weight: bold;
+  margin: 10px 0;
+}
+
+.contentview pre {
+  font-family: var(--mitm-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px 12px;
+  margin: 0;
+  background: var(--mitm-bg-alt);
+  border: 1px solid var(--mitm-border-light);
+  border-radius: 3px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--mitm-text);
+}
+
+.contentview .copy-btn {
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px solid var(--mitm-border);
+  border-radius: 3px;
+  background: var(--mitm-bg);
+  color: var(--mitm-text);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.contentview .copy-btn:hover {
+  background: var(--mitm-bg-alt);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(128, 128, 128, 0.5);
+}
