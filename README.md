@@ -228,6 +228,9 @@ The certificate is made available to Node.js via the `NODE_EXTRA_CA_CERTS` envir
 - **Binary response bodies** (images, PDFs) are captured as Base64 and displayed as a size indicator rather than rendered inline.
 - **Worker thread isolation**: Extensions running HTTP in worker threads are covered via proxy environment variable injection, but the monkey patch itself only applies to the main Extension Host process.
 - **VS Code proxy-agent conflict**: VS Code's built-in `@vscode/proxy-agent` may log `Protocol "https:" not supported` errors in the console when the proxy is active. These are caught internally and do not affect functionality.
+- **VS Code CA trust**: VS Code sometimes do not trust CA certificate of mitmproxy, some images, request rejected (Dev Tools / Console errors).
+  - installing mitmproxy CA sometimes helps: `sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/mitmproxy.crt && sudo update-ca-certificates`
+  - running VSCode with ignore certificate errors, eg `code --ignore-certificate-errors .`
 
 ---
 
