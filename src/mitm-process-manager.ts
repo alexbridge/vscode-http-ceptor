@@ -94,13 +94,17 @@ export class MitmProcessManager extends EventEmitter {
 
     const mitmReady = new Promise<void>((resolve, reject) => {
       this.outputChannel.appendLine(
-        `Starting mitmdump: ["${binary}", "-s", "${bridgeScriptPath}", "--listen-port", "${proxyPort}"]`
+        `Starting mitmdump: ["${binary}", "-s", "${bridgeScriptPath}", "--listen-host", "127.0.0.1", "--listen-port", "${proxyPort}"]`
       );
 
       try {
         const args = [
           '-s',
           bridgeScriptPath,
+          // Bind loopback only: default 0.0.0.0 exposes the proxy to the LAN,
+          // letting other machines tunnel arbitrary traffic through this host.
+          '--listen-host',
+          '127.0.0.1',
           '--listen-port',
           proxyPort.toString(),
           '--set',

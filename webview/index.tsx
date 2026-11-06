@@ -30,6 +30,40 @@ interface NetworkEvent {
 
 type DetailTab = 'Request' | 'Response' | 'Detail';
 
+type ColumnKey =
+  | 'initiator'
+  | 'tls'
+  | 'method'
+  | 'status'
+  | 'icon'
+  | 'path'
+  | 'size'
+  | 'time'
+  | 'start'
+  | 'end';
+
+interface ColumnDef {
+  key: ColumnKey;
+  label: string;
+  className: string;
+}
+
+/** Table columns in display order. Any column can be hidden via the Columns menu. */
+const COLUMNS: ColumnDef[] = [
+  { key: 'initiator', label: 'Initiator', className: 'col-initiator' },
+  { key: 'tls', label: 'TLS', className: 'col-tls' },
+  { key: 'method', label: 'Method', className: 'col-method' },
+  { key: 'status', label: 'Status', className: 'col-status' },
+  { key: 'icon', label: '', className: 'col-icon' },
+  { key: 'path', label: 'Path', className: 'col-path' },
+  { key: 'size', label: 'Size', className: 'col-size' },
+  { key: 'time', label: 'Time', className: 'col-time' },
+  { key: 'start', label: 'Start', className: 'col-start' },
+  { key: 'end', label: 'End', className: 'col-end' },
+];
+
+const HIDDEN_COLUMNS_KEY = 'httpceptor.hiddenColumns';
+
 /* ================================================================
    Utility functions
    ================================================================ */
@@ -44,6 +78,35 @@ function formatTime(startMs: number, endMs: number): string {
   const ms = (endMs - startMs) * 1000;
   if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** Wall-clock time of a mitmproxy epoch-seconds timestamp, as HH:MM:SS.mmm (local time). */
+function formatClock(epochSeconds: number): string {
+  const d = new Date(Math.round(epochSeconds * 1000));
+  const pad = (n: number, width = 2) => String(n).padStart(width, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(
+    d.getMilliseconds(),
+    3
+  )}`;
+}
+
+function loadHiddenColumns(): Set<ColumnKey> {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(HIDDEN_COLUMNS_KEY) || '[]');
+    const known = new Set<string>(COLUMNS.map((c) => c.key));
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(parsed.filter((k): k is ColumnKey => typeof k === 'string' && known.has(k)));
+  } catch {
+    return new Set();
+  }
+}
+
+function saveHiddenColumns(hidden: Set<ColumnKey>): void {
+  try {
+    localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hidden]));
+  } catch {
+    // Storage unavailable (private window, blocked site data): columns reset on reload.
+  }
 }
 
 function tryFormatJson(body: string): string {
@@ -272,17 +335,18 @@ function isHttps(url: string): boolean {
 /* ================================================================
    FlowTableHead — mitmproxy <thead>
    ================================================================ */
-const FlowTableHead = () => (
+interface FlowTableHeadProps {
+  columns: ColumnDef[];
+}
+
+const FlowTableHead = ({ columns }: FlowTableHeadProps) => (
   <thead>
     <tr>
-      <th className="col-initiator">Initiator</th>
-      <th className="col-tls">TLS</th>
-      <th className="col-method">Method</th>
-      <th className="col-status">Status</th>
-      <th className="col-icon"></th>
-      <th className="col-path">Path</th>
-      <th className="col-size">Size</th>
-      <th className="col-time">Time</th>
+      {columns.map((col) => (
+        <th key={col.key} className={col.className}>
+          {col.label}
+        </th>
+      ))}
     </tr>
   </thead>
 );
@@ -292,47 +356,141 @@ const FlowTableHead = () => (
    ================================================================ */
 interface FlowRowProps {
   flow: NetworkEvent;
+  columns: ColumnDef[];
   selected: boolean;
   onClick: () => void;
 }
 
-const FlowRow = React.memo(({ flow, selected, onClick }: FlowRowProps) => {
+const renderCell = (key: ColumnKey, flow: NetworkEvent, className: string) => {
+  switch (key) {
+    case 'initiator': {
+      const ua =
+        Object.entries(flow.request.headers || {}).find(
+          ([k]) => k.toLowerCase() === 'user-agent'
+        )?.[1] || '';
+      const initiatorDisplay = flow.initiator || (ua ? ua.split('/')[0] : '');
+      return (
+        <td key={key} className={className} title={flow.initiator || ua}>
+          {initiatorDisplay}
+        </td>
+      );
+    }
+    case 'tls':
+      return (
+        <td key={key} className={className}>
+          <span className={`tls-indicator`}>{isHttps(flow.request.url) ? '🔐' : '🔏'}</span>
+        </td>
+      );
+    case 'method':
+      return (
+        <td key={key} className={className}>
+          {flow.request.method}
+        </td>
+      );
+    case 'status':
+      return (
+        <td key={key} className={`${className} ${statusClass(flow.response.status_code)}`}>
+          {flow.response.status_code}
+        </td>
+      );
+    case 'icon':
+      return (
+        <td key={key} className={className} title={flow.response.mime_type || ''}>
+          <ResourceIcon
+            type={getResourceIconType(flow.response.status_code, flow.response.mime_type)}
+          />
+        </td>
+      );
+    case 'path':
+      return (
+        <td key={key} className={className} title={flow.request.url}>
+          {flow.request.url}
+        </td>
+      );
+    case 'size':
+      return (
+        <td key={key} className={className}>
+          {formatSize(flow.response.body?.length || (flow.response as any).content_length || 0)}
+        </td>
+      );
+    case 'time':
+      return (
+        <td key={key} className={className}>
+          {formatTime(flow.request.timestamp_start, flow.response.timestamp_end)}
+        </td>
+      );
+    case 'start':
+      return (
+        <td key={key} className={className}>
+          {formatClock(flow.request.timestamp_start)}
+        </td>
+      );
+    case 'end':
+      return (
+        <td key={key} className={className}>
+          {formatClock(flow.response.timestamp_end)}
+        </td>
+      );
+  }
+};
+
+const FlowRow = React.memo(({ flow, columns, selected, onClick }: FlowRowProps) => {
   const className = selected ? 'selected' : '';
-  const ua =
-    Object.entries(flow.request.headers || {}).find(
-      ([k]) => k.toLowerCase() === 'user-agent'
-    )?.[1] || '';
-  const initiatorDisplay = flow.initiator || (ua ? ua.split('/')[0] : '');
 
   return (
     <tr className={className} onClick={onClick}>
-      <td className="col-initiator" title={flow.initiator || ua}>
-        {initiatorDisplay}
-      </td>
-      <td className="col-tls">
-        <span className={`tls-indicator`}>{isHttps(flow.request.url) ? '🔐' : '🔏'}</span>
-      </td>
-      <td className="col-method">{flow.request.method}</td>
-      <td className={`col-status ${statusClass(flow.response.status_code)}`}>
-        {flow.response.status_code}
-      </td>
-      <td className="col-icon" title={flow.response.mime_type || ''}>
-        <ResourceIcon
-          type={getResourceIconType(flow.response.status_code, flow.response.mime_type)}
-        />
-      </td>
-      <td className="col-path" title={flow.request.url}>
-        {flow.request.url}
-      </td>
-      <td className="col-size">
-        {formatSize(flow.response.body?.length || (flow.response as any).content_length || 0)}
-      </td>
-      <td className="col-time">
-        {formatTime(flow.request.timestamp_start, flow.response.timestamp_end)}
-      </td>
+      {columns.map((col) => renderCell(col.key, flow, col.className))}
     </tr>
   );
 });
+
+/* ================================================================
+   ColumnMenu — toolbar dropdown with a checkbox per column
+   ================================================================ */
+interface ColumnMenuProps {
+  hidden: Set<ColumnKey>;
+  onToggle: (key: ColumnKey) => void;
+}
+
+const ColumnMenu = ({ hidden, onToggle }: ColumnMenuProps) => {
+  const [open, setOpen] = React.useState(false);
+  const wrapRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    return () => document.removeEventListener('mousedown', onPointerDown);
+  }, [open]);
+
+  return (
+    <div className="column-menu-wrap" ref={wrapRef}>
+      <button
+        className="toolbar-btn"
+        onClick={() => setOpen((o) => !o)}
+        title="Show / hide columns"
+      >
+        ▦
+      </button>
+      {open && (
+        <div className="column-menu">
+          {COLUMNS.map((col) => (
+            <label key={col.key} className="column-menu-item">
+              <input
+                type="checkbox"
+                checked={!hidden.has(col.key)}
+                onChange={() => onToggle(col.key)}
+              />
+              <span>{col.label || 'Icon'}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
 
 /* ================================================================
    FlowDetail — mitmproxy detail panel (Request / Response / Detail)
@@ -584,6 +742,22 @@ const App = () => {
   const [proxyRunning, setProxyRunning] = React.useState(false);
   const [filter, setFilter] = React.useState('');
   const [activeTab, setActiveTab] = React.useState<DetailTab>('Request');
+  const [hiddenColumns, setHiddenColumns] = React.useState<Set<ColumnKey>>(loadHiddenColumns);
+
+  const visibleColumns = React.useMemo(
+    () => COLUMNS.filter((col) => !hiddenColumns.has(col.key)),
+    [hiddenColumns]
+  );
+
+  const toggleColumn = (key: ColumnKey) => {
+    setHiddenColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      saveHiddenColumns(next);
+      return next;
+    });
+  };
 
   const selectedEvent = events.find((e) => e.id === selectedEventId);
 
@@ -651,6 +825,11 @@ const App = () => {
 
         <div className="separator" />
 
+        {/* Column visibility */}
+        <ColumnMenu hidden={hiddenColumns} onToggle={toggleColumn} />
+
+        <div className="separator" />
+
         {/* Filter */}
         <div className="filter-wrap">
           <span className="search-icon">🔍</span>
@@ -674,11 +853,11 @@ const App = () => {
         {/* Flow Table */}
         <div className="flow-table">
           <table>
-            <FlowTableHead />
+            <FlowTableHead columns={visibleColumns} />
             <tbody>
               {filteredEvents.length === 0 ? (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={visibleColumns.length}>
                     <div className="flow-table-empty">
                       <div className="empty-icon">⇅</div>
                       <div>
@@ -696,6 +875,7 @@ const App = () => {
                   <FlowRow
                     key={ev.id}
                     flow={ev}
+                    columns={visibleColumns}
                     selected={selectedEventId === ev.id}
                     onClick={() => {
                       setSelectedEventId(ev.id);
