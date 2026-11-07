@@ -1,4 +1,4 @@
-import * as React from 'react';
+import { useState, useMemo, useCallback, useDeferredValue, useEffect, useRef, memo } from 'react';
 import * as ReactDOM from 'react-dom/client';
 
 /* ================================================================
@@ -30,26 +30,20 @@ interface NetworkEvent {
 
 type DetailTab = 'Request' | 'Response' | 'Detail';
 
-type ColumnKey =
-  | 'initiator'
-  | 'tls'
-  | 'method'
-  | 'status'
-  | 'icon'
-  | 'path'
-  | 'size'
-  | 'time'
-  | 'start'
-  | 'end';
-
-interface ColumnDef {
-  key: ColumnKey;
-  label: string;
-  className: string;
+interface CustomHeaderDef {
+  type: 'request' | 'response';
+  name: string;
 }
 
-/** Table columns in display order. Any column can be hidden via the Columns menu. */
-const COLUMNS: ColumnDef[] = [
+interface ColumnDef {
+  key: string;
+  label: string;
+  className: string;
+  customHeader?: CustomHeaderDef;
+}
+
+/** Default table columns in display order. Any column can be hidden via the Columns menu. */
+const DEFAULT_COLUMNS: ColumnDef[] = [
   { key: 'initiator', label: 'Initiator', className: 'col-initiator' },
   { key: 'tls', label: 'TLS', className: 'col-tls' },
   { key: 'method', label: 'Method', className: 'col-method' },
@@ -63,6 +57,7 @@ const COLUMNS: ColumnDef[] = [
 ];
 
 const HIDDEN_COLUMNS_KEY = 'httpceptor.hiddenColumns';
+const CUSTOM_HEADER_COLUMNS_KEY = 'httpceptor.customHeaderColumns';
 
 /* ================================================================
    Utility functions
@@ -90,23 +85,61 @@ function formatClock(epochSeconds: number): string {
   )}`;
 }
 
-function loadHiddenColumns(): Set<ColumnKey> {
+function loadHiddenColumns(): Set<string> {
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(HIDDEN_COLUMNS_KEY) || '[]');
-    const known = new Set<string>(COLUMNS.map((c) => c.key));
     if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((k): k is ColumnKey => typeof k === 'string' && known.has(k)));
+    return new Set(parsed.filter((k): k is string => typeof k === 'string'));
   } catch {
     return new Set();
   }
 }
 
-function saveHiddenColumns(hidden: Set<ColumnKey>): void {
+function saveHiddenColumns(hidden: Set<string>): void {
   try {
     localStorage.setItem(HIDDEN_COLUMNS_KEY, JSON.stringify([...hidden]));
   } catch {
     // Storage unavailable (private window, blocked site data): columns reset on reload.
   }
+}
+
+function loadCustomColumns(): CustomHeaderDef[] {
+  try {
+    const raw = localStorage.getItem(CUSTOM_HEADER_COLUMNS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((c): c is CustomHeaderDef =>
+      Boolean(
+        c &&
+        (c.type === 'request' || c.type === 'response') &&
+        typeof c.name === 'string' &&
+        c.name.trim().length > 0
+      )
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveCustomColumns(cols: CustomHeaderDef[]): void {
+  try {
+    localStorage.setItem(CUSTOM_HEADER_COLUMNS_KEY, JSON.stringify(cols));
+  } catch {
+    // Storage unavailable
+  }
+}
+
+function getHeaderValue(headers: Record<string, string> | undefined, name: string): string {
+  if (!headers) return '';
+  if (headers[name] !== undefined) return headers[name];
+  const target = name.toLowerCase();
+  for (const k in headers) {
+    if (k.toLowerCase() === target) {
+      return headers[k];
+    }
+  }
+  return '';
 }
 
 function tryFormatJson(body: string): string {
@@ -337,14 +370,41 @@ function isHttps(url: string): boolean {
    ================================================================ */
 interface FlowTableHeadProps {
   columns: ColumnDef[];
+  onRemoveCustomColumn?: (type: 'request' | 'response', name: string) => void;
 }
 
-const FlowTableHead = ({ columns }: FlowTableHeadProps) => (
+const FlowTableHead = ({ columns, onRemoveCustomColumn }: FlowTableHeadProps) => (
   <thead>
     <tr>
       {columns.map((col) => (
-        <th key={col.key} className={col.className}>
-          {col.label}
+        <th key={col.key} className={col.className} title={col.label || undefined}>
+          <div className="th-inner">
+            <span className="th-text">
+              {col.customHeader ? (
+                <>
+                  <span className={`th-arrow ${col.customHeader.type}`}>
+                    {col.customHeader.type === 'request' ? '↑' : '↓'}
+                  </span>{' '}
+                  {col.customHeader.name}
+                </>
+              ) : (
+                col.label
+              )}
+            </span>
+            {col.customHeader && onRemoveCustomColumn && (
+              <button
+                type="button"
+                className="col-remove-btn"
+                title={`Remove column '${col.label}'`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRemoveCustomColumn(col.customHeader!.type, col.customHeader!.name);
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
         </th>
       ))}
     </tr>
@@ -358,11 +418,22 @@ interface FlowRowProps {
   flow: NetworkEvent;
   columns: ColumnDef[];
   selected: boolean;
-  onClick: () => void;
+  onSelect: (id: string) => void;
 }
 
-const renderCell = (key: ColumnKey, flow: NetworkEvent, className: string) => {
-  switch (key) {
+const renderCell = (col: ColumnDef, flow: NetworkEvent) => {
+  if (col.customHeader) {
+    const headers =
+      col.customHeader.type === 'request' ? flow.request.headers : flow.response.headers;
+    const value = getHeaderValue(headers, col.customHeader.name);
+    return (
+      <td key={col.key} className={col.className} title={value || undefined}>
+        {value}
+      </td>
+    );
+  }
+
+  switch (col.key) {
     case 'initiator': {
       const ua =
         Object.entries(flow.request.headers || {}).find(
@@ -370,32 +441,32 @@ const renderCell = (key: ColumnKey, flow: NetworkEvent, className: string) => {
         )?.[1] || '';
       const initiatorDisplay = flow.initiator || (ua ? ua.split('/')[0] : '');
       return (
-        <td key={key} className={className} title={flow.initiator || ua}>
+        <td key={col.key} className={col.className} title={flow.initiator || ua}>
           {initiatorDisplay}
         </td>
       );
     }
     case 'tls':
       return (
-        <td key={key} className={className}>
+        <td key={col.key} className={col.className}>
           <span className={`tls-indicator`}>{isHttps(flow.request.url) ? '🔐' : '🔏'}</span>
         </td>
       );
     case 'method':
       return (
-        <td key={key} className={className}>
+        <td key={col.key} className={col.className}>
           {flow.request.method}
         </td>
       );
     case 'status':
       return (
-        <td key={key} className={`${className} ${statusClass(flow.response.status_code)}`}>
+        <td key={col.key} className={`${col.className} ${statusClass(flow.response.status_code)}`}>
           {flow.response.status_code}
         </td>
       );
     case 'icon':
       return (
-        <td key={key} className={className} title={flow.response.mime_type || ''}>
+        <td key={col.key} className={col.className} title={flow.response.mime_type || ''}>
           <ResourceIcon
             type={getResourceIconType(flow.response.status_code, flow.response.mime_type)}
           />
@@ -403,43 +474,45 @@ const renderCell = (key: ColumnKey, flow: NetworkEvent, className: string) => {
       );
     case 'path':
       return (
-        <td key={key} className={className} title={flow.request.url}>
+        <td key={col.key} className={col.className} title={flow.request.url}>
           {flow.request.url}
         </td>
       );
     case 'size':
       return (
-        <td key={key} className={className}>
+        <td key={col.key} className={col.className}>
           {formatSize(flow.response.body?.length || (flow.response as any).content_length || 0)}
         </td>
       );
     case 'time':
       return (
-        <td key={key} className={className}>
+        <td key={col.key} className={col.className}>
           {formatTime(flow.request.timestamp_start, flow.response.timestamp_end)}
         </td>
       );
     case 'start':
       return (
-        <td key={key} className={className}>
+        <td key={col.key} className={col.className}>
           {formatClock(flow.request.timestamp_start)}
         </td>
       );
     case 'end':
       return (
-        <td key={key} className={className}>
+        <td key={col.key} className={col.className}>
           {formatClock(flow.response.timestamp_end)}
         </td>
       );
+    default:
+      return <td key={col.key} className={col.className} />;
   }
 };
 
-const FlowRow = React.memo(({ flow, columns, selected, onClick }: FlowRowProps) => {
+const FlowRow = memo(({ flow, columns, selected, onSelect }: FlowRowProps) => {
   const className = selected ? 'selected' : '';
 
   return (
-    <tr className={className} onClick={onClick}>
-      {columns.map((col) => renderCell(col.key, flow, col.className))}
+    <tr className={className} onClick={() => onSelect(flow.id)}>
+      {columns.map((col) => renderCell(col, flow))}
     </tr>
   );
 });
@@ -448,15 +521,17 @@ const FlowRow = React.memo(({ flow, columns, selected, onClick }: FlowRowProps) 
    ColumnMenu — toolbar dropdown with a checkbox per column
    ================================================================ */
 interface ColumnMenuProps {
-  hidden: Set<ColumnKey>;
-  onToggle: (key: ColumnKey) => void;
+  columns: ColumnDef[];
+  hidden: Set<string>;
+  onToggle: (key: string) => void;
+  onRemoveCustomColumn?: (type: 'request' | 'response', name: string) => void;
 }
 
-const ColumnMenu = ({ hidden, onToggle }: ColumnMenuProps) => {
-  const [open, setOpen] = React.useState(false);
-  const wrapRef = React.useRef<HTMLDivElement>(null);
+const ColumnMenu = ({ columns, hidden, onToggle, onRemoveCustomColumn }: ColumnMenuProps) => {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!open) return;
     const onPointerDown = (e: MouseEvent) => {
       if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
@@ -476,15 +551,41 @@ const ColumnMenu = ({ hidden, onToggle }: ColumnMenuProps) => {
       </button>
       {open && (
         <div className="column-menu">
-          {COLUMNS.map((col) => (
-            <label key={col.key} className="column-menu-item">
-              <input
-                type="checkbox"
-                checked={!hidden.has(col.key)}
-                onChange={() => onToggle(col.key)}
-              />
-              <span>{col.label || 'Icon'}</span>
-            </label>
+          {columns.map((col) => (
+            <div key={col.key} className="column-menu-row">
+              <label className="column-menu-item">
+                <input
+                  type="checkbox"
+                  checked={!hidden.has(col.key)}
+                  onChange={() => onToggle(col.key)}
+                />
+                <span className="column-menu-label">
+                  {col.customHeader ? (
+                    <>
+                      <span className={`th-arrow ${col.customHeader.type}`}>
+                        {col.customHeader.type === 'request' ? '↑' : '↓'}
+                      </span>{' '}
+                      {col.customHeader.name}
+                    </>
+                  ) : (
+                    col.label || 'Icon'
+                  )}
+                </span>
+              </label>
+              {col.customHeader && onRemoveCustomColumn && (
+                <button
+                  type="button"
+                  className="column-menu-remove-btn"
+                  title={`Remove ${col.label}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveCustomColumn(col.customHeader!.type, col.customHeader!.name);
+                  }}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -500,9 +601,18 @@ interface FlowDetailProps {
   activeTab: DetailTab;
   onTabChange: (tab: DetailTab) => void;
   onClose: () => void;
+  isHeaderColumnAdded: (type: 'request' | 'response', name: string) => boolean;
+  onToggleHeaderColumn: (type: 'request' | 'response', name: string) => void;
 }
 
-const FlowDetail = ({ flow, activeTab, onTabChange, onClose }: FlowDetailProps) => {
+const FlowDetail = ({
+  flow,
+  activeTab,
+  onTabChange,
+  onClose,
+  isHeaderColumnAdded,
+  onToggleHeaderColumn,
+}: FlowDetailProps) => {
   const tabs: DetailTab[] = ['Request', 'Response', 'Detail'];
 
   return (
@@ -529,8 +639,20 @@ const FlowDetail = ({ flow, activeTab, onTabChange, onClose }: FlowDetailProps) 
 
       {/* Section content */}
       <section>
-        {activeTab === 'Request' && <RequestView flow={flow} />}
-        {activeTab === 'Response' && <ResponseView flow={flow} />}
+        {activeTab === 'Request' && (
+          <RequestView
+            flow={flow}
+            isHeaderColumnAdded={isHeaderColumnAdded}
+            onToggleHeaderColumn={onToggleHeaderColumn}
+          />
+        )}
+        {activeTab === 'Response' && (
+          <ResponseView
+            flow={flow}
+            isHeaderColumnAdded={isHeaderColumnAdded}
+            onToggleHeaderColumn={onToggleHeaderColumn}
+          />
+        )}
         {activeTab === 'Detail' && <DetailView flow={flow} />}
       </section>
     </div>
@@ -538,88 +660,61 @@ const FlowDetail = ({ flow, activeTab, onTabChange, onClose }: FlowDetailProps) 
 };
 
 /* ================================================================
-   RequestView — mitmproxy Request tab
+   HeadersSection & BodySection — reusable detail subcomponents
    ================================================================ */
-const RequestView = ({ flow }: { flow: NetworkEvent }) => (
-  <div>
-    {/* First line — blue banner like mitmproxy */}
-    <div className="first-line">
-      {flow.request.method} {flow.request.url}
-    </div>
+interface HeadersSectionProps {
+  title: string;
+  type: 'request' | 'response';
+  headers?: Record<string, string>;
+  isAdded: (type: 'request' | 'response', name: string) => boolean;
+  onToggle: (type: 'request' | 'response', name: string) => void;
+}
 
-    {/* Request Headers */}
+const HeadersSection = ({ title, type, headers = {}, isAdded, onToggle }: HeadersSectionProps) => {
+  const entries = Object.entries(headers);
+  const arrow = type === 'request' ? '↑' : '↓';
+
+  return (
     <div className="kv-section">
-      <h5>Request Headers</h5>
-      {Object.entries(flow.request.headers).map(([k, v]) => (
-        <div className="kv-row" key={k}>
-          <span className="kv-key">{k}</span>
-          <span className="kv-value">{v}</span>
-        </div>
-      ))}
-      {Object.keys(flow.request.headers).length === 0 && (
+      <h5>{title}</h5>
+      {entries.map(([k, v]) => {
+        const added = isAdded(type, k);
+        return (
+          <div className="kv-row" key={k}>
+            <button
+              type="button"
+              className={`header-col-btn ${added ? 'active' : ''}`}
+              title={
+                added
+                  ? `Remove '${arrow} ${k}' from table columns`
+                  : `Add '${arrow} ${k}' to table columns`
+              }
+              onClick={() => onToggle(type, k)}
+            >
+              ▦
+            </button>
+            <span className="kv-key">{k}</span>
+            <span className="kv-value">{v}</span>
+          </div>
+        );
+      })}
+      {entries.length === 0 && (
         <div style={{ color: 'var(--mitm-text-muted)', fontSize: 12, fontStyle: 'italic' }}>
           No headers captured
         </div>
       )}
     </div>
+  );
+};
 
-    {/* Request Body */}
-    {flow.request.body && (
-      <div className="contentview">
-        <div className="controls">
-          <h5>Request Body</h5>
-          <button
-            className="copy-btn"
-            onClick={() => navigator.clipboard.writeText(flow.request.body!)}
-          >
-            Copy
-          </button>
-        </div>
-        <pre>{tryFormatJson(flow.request.body)}</pre>
-      </div>
-    )}
-  </div>
-);
+interface BodySectionProps {
+  title: string;
+  body?: string;
+}
 
-/* ================================================================
-   ResponseView — mitmproxy Response tab
-   ================================================================ */
-const ResponseView = ({ flow }: { flow: NetworkEvent }) => (
-  <div>
-    {/* First line — status */}
-    <div className="first-line">HTTP {flow.response.status_code}</div>
-
-    {/* Response Headers */}
-    <div className="kv-section">
-      <h5>Response Headers</h5>
-      {Object.entries(flow.response.headers).map(([k, v]) => (
-        <div className="kv-row" key={k}>
-          <span className="kv-key">{k}</span>
-          <span className="kv-value">{v}</span>
-        </div>
-      ))}
-      {Object.keys(flow.response.headers).length === 0 && (
-        <div style={{ color: 'var(--mitm-text-muted)', fontSize: 12, fontStyle: 'italic' }}>
-          No headers captured
-        </div>
-      )}
-    </div>
-
-    {/* Response Body */}
-    {flow.response.body ? (
-      <div className="contentview">
-        <div className="controls">
-          <h5>Response Body</h5>
-          <button
-            className="copy-btn"
-            onClick={() => navigator.clipboard.writeText(flow.response.body!)}
-          >
-            Copy
-          </button>
-        </div>
-        <pre>{tryFormatJson(flow.response.body)}</pre>
-      </div>
-    ) : (
+const BodySection = ({ title, body }: BodySectionProps) => {
+  if (!body) {
+    return (
       <div
         style={{
           color: 'var(--mitm-text-muted)',
@@ -628,9 +723,64 @@ const ResponseView = ({ flow }: { flow: NetworkEvent }) => (
           marginTop: 12,
         }}
       >
-        No response body
+        No {title.toLowerCase()}
       </div>
-    )}
+    );
+  }
+
+  return (
+    <div className="contentview">
+      <div className="controls">
+        <h5>{title}</h5>
+        <button
+          type="button"
+          className="copy-btn"
+          onClick={() => navigator.clipboard.writeText(body)}
+        >
+          Copy
+        </button>
+      </div>
+      <pre>{tryFormatJson(body)}</pre>
+    </div>
+  );
+};
+
+/* ================================================================
+   RequestView & ResponseView
+   ================================================================ */
+interface HeaderViewProps {
+  flow: NetworkEvent;
+  isHeaderColumnAdded: (type: 'request' | 'response', name: string) => boolean;
+  onToggleHeaderColumn: (type: 'request' | 'response', name: string) => void;
+}
+
+const RequestView = ({ flow, isHeaderColumnAdded, onToggleHeaderColumn }: HeaderViewProps) => (
+  <div>
+    <div className="first-line">
+      {flow.request.method} {flow.request.url}
+    </div>
+    <HeadersSection
+      title="Request Headers"
+      type="request"
+      headers={flow.request.headers}
+      isAdded={isHeaderColumnAdded}
+      onToggle={onToggleHeaderColumn}
+    />
+    {flow.request.body && <BodySection title="Request Body" body={flow.request.body} />}
+  </div>
+);
+
+const ResponseView = ({ flow, isHeaderColumnAdded, onToggleHeaderColumn }: HeaderViewProps) => (
+  <div>
+    <div className="first-line">HTTP {flow.response.status_code}</div>
+    <HeadersSection
+      title="Response Headers"
+      type="response"
+      headers={flow.response.headers}
+      isAdded={isHeaderColumnAdded}
+      onToggle={onToggleHeaderColumn}
+    />
+    <BodySection title="Response Body" body={flow.response.body} />
   </div>
 );
 
@@ -737,38 +887,124 @@ const DetailView = ({ flow }: { flow: NetworkEvent }) => {
    App — main container
    ================================================================ */
 const App = () => {
-  const [events, setEvents] = React.useState<NetworkEvent[]>([]);
-  const [selectedEventId, setSelectedEventId] = React.useState<string | null>(null);
-  const [proxyRunning, setProxyRunning] = React.useState(false);
-  const [filter, setFilter] = React.useState('');
-  const [activeTab, setActiveTab] = React.useState<DetailTab>('Request');
-  const [hiddenColumns, setHiddenColumns] = React.useState<Set<ColumnKey>>(loadHiddenColumns);
+  const [events, setEvents] = useState<NetworkEvent[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  const [proxyRunning, setProxyRunning] = useState(false);
+  const [filter, setFilter] = useState('');
+  const deferredFilter = useDeferredValue(filter);
+  const [activeTab, setActiveTab] = useState<DetailTab>('Request');
+  const [customColumns, setCustomColumns] = useState<CustomHeaderDef[]>(loadCustomColumns);
+  const [hiddenColumns, setHiddenColumns] = useState<Set<string>>(loadHiddenColumns);
 
-  const visibleColumns = React.useMemo(
-    () => COLUMNS.filter((col) => !hiddenColumns.has(col.key)),
-    [hiddenColumns]
+  // Sync state to localStorage reactively
+  useEffect(() => {
+    saveCustomColumns(customColumns);
+  }, [customColumns]);
+
+  useEffect(() => {
+    saveHiddenColumns(hiddenColumns);
+  }, [hiddenColumns]);
+
+  const allColumns: ColumnDef[] = useMemo(() => {
+    const pathIdx = DEFAULT_COLUMNS.findIndex((c) => c.key === 'path');
+    const customDefs: ColumnDef[] = customColumns.map((c) => {
+      const arrow = c.type === 'request' ? '↑' : '↓';
+      return {
+        key: `custom:${c.type}:${c.name.toLowerCase()}`,
+        label: `${arrow} ${c.name}`,
+        className: 'col-custom-header',
+        customHeader: c,
+      };
+    });
+
+    if (pathIdx !== -1) {
+      return [
+        ...DEFAULT_COLUMNS.slice(0, pathIdx + 1),
+        ...customDefs,
+        ...DEFAULT_COLUMNS.slice(pathIdx + 1),
+      ];
+    }
+    return [...DEFAULT_COLUMNS, ...customDefs];
+  }, [customColumns]);
+
+  const visibleColumns = useMemo(
+    () => allColumns.filter((col) => !hiddenColumns.has(col.key)),
+    [allColumns, hiddenColumns]
   );
 
-  const toggleColumn = (key: ColumnKey) => {
+  // O(1) set lookup for header button active states
+  const addedHeaderKeys = useMemo(
+    () => new Set(customColumns.map((c) => `${c.type}:${c.name.toLowerCase()}`)),
+    [customColumns]
+  );
+
+  const isHeaderColumnAdded = useCallback(
+    (type: 'request' | 'response', name: string) =>
+      addedHeaderKeys.has(`${type}:${name.toLowerCase()}`),
+    [addedHeaderKeys]
+  );
+
+  const toggleHeaderColumn = useCallback((type: 'request' | 'response', name: string) => {
+    const target = name.toLowerCase();
+    setCustomColumns((prev) => {
+      const exists = prev.some((c) => c.type === type && c.name.toLowerCase() === target);
+      if (exists) {
+        return prev.filter((c) => !(c.type === type && c.name.toLowerCase() === target));
+      }
+      return [...prev, { type, name }];
+    });
+    setHiddenColumns((prev) => {
+      const key = `custom:${type}:${target}`;
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  const removeCustomColumn = useCallback((type: 'request' | 'response', name: string) => {
+    const target = name.toLowerCase();
+    setCustomColumns((prev) =>
+      prev.filter((c) => !(c.type === type && c.name.toLowerCase() === target))
+    );
+  }, []);
+
+  const toggleColumn = useCallback((key: string) => {
     setHiddenColumns((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
-      saveHiddenColumns(next);
       return next;
     });
-  };
+  }, []);
 
-  const selectedEvent = events.find((e) => e.id === selectedEventId);
+  const handleSelectFlow = useCallback((id: string) => {
+    setSelectedEventId(id);
+    setActiveTab('Request');
+  }, []);
 
-  const filteredEvents = events.filter((ev) => {
-    if (!filter) return true;
-    const searchStr =
-      `${ev.request.method} ${ev.request.url} ${ev.response.status_code} ${ev.initiator || ''}`.toLowerCase();
-    return searchStr.includes(filter.toLowerCase());
-  });
+  const selectedEvent = useMemo(
+    () => events.find((e) => e.id === selectedEventId),
+    [events, selectedEventId]
+  );
 
-  React.useEffect(() => {
+  const filteredEvents = useMemo(() => {
+    if (!deferredFilter) return events;
+    const filterLower = deferredFilter.toLowerCase();
+    return events.filter((ev) => {
+      const searchStr =
+        `${ev.request.method} ${ev.request.url} ${ev.response.status_code} ${ev.initiator || ''}`.toLowerCase();
+      if (searchStr.includes(filterLower)) return true;
+      for (const c of customColumns) {
+        const headers = c.type === 'request' ? ev.request.headers : ev.response.headers;
+        const val = getHeaderValue(headers, c.name).toLowerCase();
+        if (val.includes(filterLower)) return true;
+      }
+      return false;
+    });
+  }, [events, deferredFilter, customColumns]);
+
+  useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       if (message.command === 'network-event') {
@@ -785,10 +1021,10 @@ const App = () => {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
-  const clearFlows = () => {
+  const clearFlows = useCallback(() => {
     setEvents([]);
     setSelectedEventId(null);
-  };
+  }, []);
 
   return (
     <div className="mitm-container">
@@ -826,7 +1062,12 @@ const App = () => {
         <div className="separator" />
 
         {/* Column visibility */}
-        <ColumnMenu hidden={hiddenColumns} onToggle={toggleColumn} />
+        <ColumnMenu
+          columns={allColumns}
+          hidden={hiddenColumns}
+          onToggle={toggleColumn}
+          onRemoveCustomColumn={removeCustomColumn}
+        />
 
         <div className="separator" />
 
@@ -853,7 +1094,7 @@ const App = () => {
         {/* Flow Table */}
         <div className="flow-table">
           <table>
-            <FlowTableHead columns={visibleColumns} />
+            <FlowTableHead columns={visibleColumns} onRemoveCustomColumn={removeCustomColumn} />
             <tbody>
               {filteredEvents.length === 0 ? (
                 <tr>
@@ -877,10 +1118,7 @@ const App = () => {
                     flow={ev}
                     columns={visibleColumns}
                     selected={selectedEventId === ev.id}
-                    onClick={() => {
-                      setSelectedEventId(ev.id);
-                      setActiveTab('Request');
-                    }}
+                    onSelect={handleSelectFlow}
                   />
                 ))
               )}
@@ -897,6 +1135,8 @@ const App = () => {
               activeTab={activeTab}
               onTabChange={setActiveTab}
               onClose={() => setSelectedEventId(null)}
+              isHeaderColumnAdded={isHeaderColumnAdded}
+              onToggleHeaderColumn={toggleHeaderColumn}
             />
           </>
         )}

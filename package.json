@@ -2,7 +2,7 @@
   "name": "http-ceptor",
   "displayName": "HTTPceptor",
   "description": "Embedded mitmproxy network inspector for VS Code",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "abridge",
   "author": "abridge",
   "repository": {

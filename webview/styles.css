@@ -213,7 +213,7 @@ body {
   flex: 1 1 auto;
   width: 100%;
   overflow-y: scroll;
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .flow-table table {
@@ -232,7 +232,7 @@ body {
   font-weight: normal;
   font-size: 12px;
   color: var(--mitm-text-muted);
-  padding: 0 1px;
+  padding: 0 4px;
   text-align: left;
   user-select: none;
   position: relative;
@@ -240,6 +240,56 @@ body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.flow-table th .th-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  width: 100%;
+}
+
+.flow-table th .th-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.th-arrow {
+  font-weight: bold;
+}
+
+.th-arrow.request {
+  color: #4caf50;
+}
+
+.th-arrow.response {
+  color: #2196f3;
+}
+
+.col-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--mitm-text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 2px;
+  opacity: 0.5;
+  flex-shrink: 0;
+  transition: opacity 0.1s, background-color 0.1s, color 0.1s;
+}
+
+.col-remove-btn:hover {
+  opacity: 1;
+  background: rgba(255, 0, 0, 0.15);
+  color: #f44336;
 }
 
 .flow-table th:hover {
@@ -395,6 +445,12 @@ body {
   color: var(--mitm-text-muted);
 }
 
+.col-custom-header {
+  width: 130px;
+  font-family: var(--mitm-mono);
+  font-size: 11px;
+}
+
 /* Column visibility menu */
 .column-menu-wrap {
   position: relative;
@@ -405,12 +461,29 @@ body {
   top: calc(100% + 4px);
   left: 0;
   z-index: 10;
-  min-width: 150px;
+  min-width: 170px;
+  max-height: 80vh;
+  overflow-y: auto;
   padding: 4px 0;
   background: var(--mitm-bg);
   border: 1px solid var(--mitm-border);
   border-radius: 3px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.column-menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 0;
+}
+
+.column-menu-row:hover {
+  background: var(--mitm-selected);
+}
+
+.column-menu-row .column-menu-item {
+  flex: 1;
 }
 
 .column-menu-item {
@@ -424,8 +497,27 @@ body {
   white-space: nowrap;
 }
 
-.column-menu-item:hover {
-  background: var(--mitm-selected);
+.column-menu-remove-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--mitm-text-muted);
+  font-size: 10px;
+  cursor: pointer;
+  border-radius: 2px;
+  opacity: 0.5;
+  flex-shrink: 0;
+}
+
+.column-menu-remove-btn:hover {
+  opacity: 1;
+  background: rgba(255, 0, 0, 0.15);
+  color: #f44336;
 }
 
 /* Status color coding */
@@ -607,11 +699,57 @@ body {
 
 .kv-row {
   display: flex;
+  align-items: flex-start;
   margin-bottom: 2px;
   line-height: 1.5;
   max-height: 12.4ex;
   overflow-y: auto;
   word-break: break-all;
+}
+
+.header-col-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  margin-right: 4px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--mitm-text-muted);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.35;
+  transition: opacity 0.15s, background-color 0.15s, color 0.15s, border-color 0.15s;
+  user-select: none;
+}
+
+.kv-row:hover .header-col-btn {
+  opacity: 0.85;
+}
+
+.header-col-btn:hover {
+  opacity: 1 !important;
+  background: rgba(0, 0, 0, 0.08);
+  color: var(--mitm-text);
+  border-color: var(--mitm-border);
+}
+
+.vscode-dark .header-col-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--mitm-text);
+}
+
+.header-col-btn.active {
+  opacity: 1;
+  color: var(--mitm-link);
+  background: rgba(66, 139, 202, 0.15);
+  border-color: var(--mitm-link);
 }
 
 .kv-key {

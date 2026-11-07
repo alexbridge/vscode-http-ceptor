@@ -64,25 +64,57 @@ HTTPceptor finds your local mitmproxy install automatically — no PATH configur
 
 ## Requirements
 
-HTTPceptor requires **mitmproxy** to be installed on your system. It is not bundled.
+HTTPceptor requires **mitmproxy** (`mitmdump`) installed on your system. It is not bundled.
 
+### Installing mitmproxy
+
+#### Linux (Recommended: Standalone Binary)
+No Python, pip, or dependencies required:
 ```bash
-pip install mitmproxy
+mkdir -p ~/.local/bin
+curl -sL https://downloads.mitmproxy.org/12.3.1/mitmproxy-12.3.1-linux-x86_64.tar.gz | tar -xz -C ~/.local/bin
 ```
 
-Verify the install:
+#### macOS
+```bash
+brew install mitmproxy
+```
+
+#### Windows
+Download the installer from [mitmproxy.org](https://mitmproxy.org/), or install via package managers:
+```powershell
+winget install mitmproxy.mitmproxy
+# or
+choco install mitmproxy
+```
+
+#### Python CLI Tools (pipx / uv)
+On modern Linux/macOS with PEP 668:
+```bash
+# Using pipx (recommended if you have Python):
+pipx install mitmproxy
+
+# Or using uv:
+uv tool install mitmproxy
+```
+
+---
+
+### Verify Installation
+
 ```bash
 mitmdump --version
 ```
 
-> **Python 3.10+** is required by mitmproxy. Check with `python3 --version`.
-
-If `mitmdump` is not found on PATH after install (common with `pip install --user`), either set `httpceptor.mitmBinary` in settings or add the pip user bin directory to your PATH:
+If `mitmdump` is not found on PATH after install (common with `~/.local/bin`), either set `httpceptor.mitmBinary` in VS Code settings or add the directory to your PATH:
 
 ```bash
 # Linux / macOS — add to ~/.bashrc or ~/.zshrc
 export PATH="$HOME/.local/bin:$PATH"
 ```
+
+> **Troubleshooting `ModuleNotFoundError: No module named 'mitmproxy'` or `No module named 'pip'`:**  
+> This error happens on Linux when an old python script exists in `~/.local/bin/mitmdump` after the system Python was upgraded (e.g. from 3.10 to 3.13). The cleanest fix is to install the official standalone binary shown above, which bundles all dependencies and does not rely on system Python packages.
 
 ---
 
@@ -100,7 +132,7 @@ Search for **HTTPceptor** in the Extensions view and click **Install**.
 
 ## Getting Started
 
-1. Install mitmproxy: `pip install mitmproxy`
+1. Install mitmproxy (see [Requirements](#requirements) above).
 2. Click the **HTTPceptor** status bar item or run **HTTPceptor: Start Proxy** from the Command Palette.
 3. The extension starts mitmdump, applies proxy settings, and opens the traffic panel.
 4. Watch requests appear in the panel in real time.
@@ -228,9 +260,39 @@ The certificate is made available to Node.js via the `NODE_EXTRA_CA_CERTS` envir
 - **Binary response bodies** (images, PDFs) are captured as Base64 and displayed as a size indicator rather than rendered inline.
 - **Worker thread isolation**: Extensions running HTTP in worker threads are covered via proxy environment variable injection, but the monkey patch itself only applies to the main Extension Host process.
 - **VS Code proxy-agent conflict**: VS Code's built-in `@vscode/proxy-agent` may log `Protocol "https:" not supported` errors in the console when the proxy is active. These are caught internally and do not affect functionality.
-- **VS Code CA trust**: VS Code sometimes do not trust CA certificate of mitmproxy, some images, request rejected (Dev Tools / Console errors).
-  - installing mitmproxy CA sometimes helps: `sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/mitmproxy.crt && sudo update-ca-certificates`
-  - running VSCode with ignore certificate errors, eg `code --ignore-certificate-errors .`
+- **Renderer / WebView CA Trust**:
+  The Extension Host (Node.js) trusts the mitmproxy CA automatically via `NODE_EXTRA_CA_CERTS`, but VS Code's **Renderer process** (Chromium / Electron) handles WebView assets, image previews, and marketplace icons using Chromium's internal certificate store. Because Chromium ignores Node environment variables, it may report `net::ERR_CERT_AUTHORITY_INVALID` in Developer Tools / Console.
+
+  **Solutions:**
+  - **Option 1: Launch with ignore certificate errors** (Fastest, 100% reliable across all OSes):
+    ```bash
+    code --ignore-certificate-errors .
+    # or for Codium / Cursor:
+    codium --ignore-certificate-errors .
+    cursor --ignore-certificate-errors .
+    ```
+    *Permanent setting:* Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`), select **Preferences: Configure Runtime Arguments** (which edits `argv.json`), and add:
+    ```json
+    "ignore-certificate-errors": true
+    ```
+  - **Option 2: Install the mitmproxy CA into the system / browser trust store:**
+    - **Debian / Ubuntu System Store:**
+      ```bash
+      sudo cp ~/.mitmproxy/mitmproxy-ca-cert.pem /usr/local/share/ca-certificates/mitmproxy.crt && sudo update-ca-certificates
+      ```
+    - **Linux Chromium NSS Database** (required if Electron ignores `/etc/ssl/certs`):
+      ```bash
+      sudo apt install -y libnss3-tools
+      certutil -d sql:$HOME/.pki/nssdb -A -t "C,," -n mitmproxy -i ~/.mitmproxy/mitmproxy-ca-cert.pem
+      ```
+    - **macOS System Keychain:**
+      ```bash
+      sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ~/.mitmproxy/mitmproxy-ca-cert.pem
+      ```
+    - **Windows:**
+      ```powershell
+      certutil -addstore root %USERPROFILE%\.mitmproxy\mitmproxy-ca-cert.p12
+      ```
 
 ---
 

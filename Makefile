@@ -6,6 +6,12 @@ VSIX := $(NAME)-$(VERSION).vsix
 OPEN_VSX_TOKEN := $(shell grep OPEN_VSX_TOKEN ~/.config/env | cut -d '=' -f 2)
 .PHONY: build lint format pack clean install-ext
 
+install-mitm:
+	mkdir -p ~/.local/bin
+	curl -sL https://downloads.mitmproxy.org/12.3.1/mitmproxy-12.3.1-linux-x86_64.tar.gz | tar -xz -C ~/.local/bin
+	@echo "mitmproxy installed to ~/.local/bin"
+	~/.local/bin/mitmdump --version
+
 build:
 	npm run build:production
 
