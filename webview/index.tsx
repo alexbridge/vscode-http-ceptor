@@ -22,6 +22,7 @@ interface NetworkEvent {
     headers: Record<string, string>;
     timestamp_start: number;
     timestamp_end: number;
+    content_length?: number;
     body?: string;
     is_binary?: boolean;
     mime_type?: string;
@@ -55,6 +56,9 @@ const DEFAULT_COLUMNS: ColumnDef[] = [
   { key: 'start', label: 'Start', className: 'col-start' },
   { key: 'end', label: 'End', className: 'col-end' },
 ];
+
+/** Oldest flows are dropped beyond this count, bounding memory held by captured bodies. */
+const MAX_FLOWS = 5000;
 
 const HIDDEN_COLUMNS_KEY = 'httpceptor.hiddenColumns';
 const CUSTOM_HEADER_COLUMNS_KEY = 'httpceptor.customHeaderColumns';
@@ -344,15 +348,6 @@ const ResourceIcon = ({ type }: { type: string }) => {
   }
 };
 
-function urlPath(url: string): string {
-  try {
-    const u = new URL(url);
-    return u.pathname + u.search;
-  } catch {
-    return url;
-  }
-}
-
 function urlHost(url: string): string {
   try {
     return new URL(url).host;
@@ -481,7 +476,7 @@ const renderCell = (col: ColumnDef, flow: NetworkEvent) => {
     case 'size':
       return (
         <td key={col.key} className={col.className}>
-          {formatSize(flow.response.body?.length || (flow.response as any).content_length || 0)}
+          {formatSize(flow.response.content_length ?? 0)}
         </td>
       );
     case 'time':
@@ -713,6 +708,8 @@ interface BodySectionProps {
 }
 
 const BodySection = ({ title, body }: BodySectionProps) => {
+  const formatted = useMemo(() => (body ? tryFormatJson(body) : ''), [body]);
+
   if (!body) {
     return (
       <div
@@ -740,7 +737,7 @@ const BodySection = ({ title, body }: BodySectionProps) => {
           Copy
         </button>
       </div>
-      <pre>{tryFormatJson(body)}</pre>
+      <pre>{formatted}</pre>
     </div>
   );
 };
@@ -870,11 +867,7 @@ const DetailView = ({ flow }: { flow: NetworkEvent }) => {
             </tr>
             <tr>
               <td>Response Size</td>
-              <td>
-                {formatSize(
-                  flow.response.body?.length || (flow.response as any).content_length || 0
-                )}
-              </td>
+              <td>{formatSize(flow.response.content_length ?? 0)}</td>
             </tr>
           </tbody>
         </table>
@@ -917,14 +910,11 @@ const App = () => {
       };
     });
 
-    if (pathIdx !== -1) {
-      return [
-        ...DEFAULT_COLUMNS.slice(0, pathIdx + 1),
-        ...customDefs,
-        ...DEFAULT_COLUMNS.slice(pathIdx + 1),
-      ];
-    }
-    return [...DEFAULT_COLUMNS, ...customDefs];
+    return [
+      ...DEFAULT_COLUMNS.slice(0, pathIdx + 1),
+      ...customDefs,
+      ...DEFAULT_COLUMNS.slice(pathIdx + 1),
+    ];
   }, [customColumns]);
 
   const visibleColumns = useMemo(
@@ -1008,7 +998,11 @@ const App = () => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       if (message.command === 'network-event') {
-        setEvents((prev) => [...prev, message.data]);
+        setEvents((prev) =>
+          prev.length < MAX_FLOWS
+            ? [...prev, message.data]
+            : [...prev.slice(prev.length - MAX_FLOWS + 1), message.data]
+        );
       } else if (message.command === 'proxy-status') {
         setProxyRunning(message.running);
       }
